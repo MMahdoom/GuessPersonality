@@ -1,0 +1,26 @@
+<resources>
+    <string name="app_name">Guess Personality</string>
+    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="welcome_subtitle">Tamil &amp; Pan-Indian Forehead Party Game</string>
+    <string name="create_room">Create Room</string>
+    <string name="join_room">Join Room</string>
+    <string name="scan_qr">Scan QR</string>
+    <string name="share_invite">Share Invite</string>
+    <string name="tab_lobby_deck">Lobby &amp; Deck</string>
+    <string name="tab_play_forehead">Forehead Play</string>
+    <string name="tab_points">Points</string>
+    <string name="display_button">DISPLAY</string>
+    <string name="hide_lock_button">HIDE / LOCK</string>
+    <string name="finalize_deck">Finalize Deck</string>
+    <string name="mark_guessed">Guessed Correctly!</string>
+    <string name="mark_unguessed">Unguessed (0 pts)</string>
+    <string name="sign_out">Sign Out</string>
+    <string name="leave_room">Leave Room</string>
+    <string name="cd_hero_marquee">Festive cinema marquee party banner</string>
+    <string name="cd_qr_code">Scannable room invite QR code</string>
+    <string name="cd_personality_photo">Personality portrait photo</string>
+    <string name="cd_clue_backdrop">Decorative stage spotlight backdrop</string>
+    <string name="cd_back">Navigate back</string>
+    <string name="cd_share">Share room code and link</string>
+    <string name="cd_copy">Copy room code</string>
+</resources>

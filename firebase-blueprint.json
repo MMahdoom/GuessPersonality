@@ -1,0 +1,136 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Authenticated player profile storing preferred nickname and lifetime match statistics.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the document ID."
+        },
+        "nickname": {
+          "type": "string",
+          "description": "Player's preferred display name (1 to 30 characters)."
+        },
+        "gamesPlayed": {
+          "type": "integer",
+          "description": "Total completed matches played."
+        },
+        "totalPoints": {
+          "type": "integer",
+          "description": "Cumulative points earned across matches."
+        },
+        "bestRoundScore": {
+          "type": "integer",
+          "description": "Highest single-round score achieved (0 to 15)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp written via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp written via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "nickname",
+        "gamesPlayed",
+        "totalPoints",
+        "bestRoundScore",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GameRoom": {
+      "title": "Game Room",
+      "description": "Real-time Guess the Personality multiplayer party room synced across devices.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "Short 6-character uppercase alphanumeric room code matching the document ID."
+        },
+        "roomName": {
+          "type": "string",
+          "description": "Host-defined room title (1 to 60 characters)."
+        },
+        "hostId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the room host (immutable after creation)."
+        },
+        "hostName": {
+          "type": "string",
+          "description": "Display nickname of the room host (1 to 30 characters)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["LOBBY", "PLAYING", "FINISHED"],
+          "description": "Lifecycle phase of the match."
+        },
+        "currentRound": {
+          "type": "integer",
+          "description": "Active round number from 1 to 3."
+        },
+        "deckIds": {
+          "type": "array",
+          "description": "Ordered subset of finalized personality IDs (1 to 100 entries, each integer 1..100). Card #1 maps to deckIds[0], Card #N maps to deckIds[N-1]."
+        },
+        "deckFinalized": {
+          "type": "boolean",
+          "description": "True once the host locks the personality subset for player number selection."
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "Bounded list of up to 20 Firebase Auth UIDs participating in the room."
+        },
+        "players": {
+          "type": "object",
+          "description": "Map keyed by player UID storing nickname, selectedCardNumber (0..N), cardVisible, roundQuestions (0..5), totalQuestions (0..15), guessCompleted, guessedCorrectly, round1Score, round2Score, round3Score, and totalScore."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp written via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp written via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "roomCode",
+        "roomName",
+        "hostId",
+        "hostName",
+        "status",
+        "currentRound",
+        "deckIds",
+        "deckFinalized",
+        "memberUids",
+        "players",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Per-user profile and lifetime stats scoped strictly to the authenticated owner."
+    },
+    "/rooms/{roomCode}": {
+      "schema": {
+        "$ref": "#/entities/GameRoom"
+      },
+      "description": "Real-time party game rooms addressable by short room code, with action-gated host and member updates."
+    }
+  }
+}

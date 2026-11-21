@@ -1,0 +1,504 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  BookOpen,
+  Clock,
+  Eye,
+  LogOut,
+  PlusCircle,
+  QrCode,
+  Sparkles,
+  Trophy,
+  Users,
+} from 'lucide-react';
+import personalitiesData from './data/personalities.json';
+import DeckBuilderModal from './components/DeckBuilderModal.jsx';
+import LobbyDeckTab from './components/LobbyDeckTab.jsx';
+import ForeheadPlayTab from './components/ForeheadPlayTab.jsx';
+import PointsTab from './components/PointsTab.jsx';
+import {
+  advanceRound,
+  createRoom,
+  eliminatePersonalityFromPile,
+  finalizeDeck,
+  finishMatch,
+  hostRecordScore,
+  isFirebaseConfigured,
+  joinRoom,
+  pickCard,
+  restoreEliminatedPersonality,
+  setCardVisibility,
+  subscribeRoom,
+  updateQuestions,
+  completeGuess,
+} from './services/roomService.js';
+import {
+  formatRemainingSession,
+  getOrCreateBrowserPlayerId,
+  normalizeRoomCode,
+} from './utils/gameUtils.js';
+
+export default function App() {
+  const playerId = useMemo(() => getOrCreateBrowserPlayerId(), []);
+  const personalityById = useMemo(() => {
+    const map = {};
+    for (const p of personalitiesData) map[p.id] = p;
+    return map;
+  }, []);
+
+  const [activeRoomCode, setActiveRoomCode] = useState(null);
+  const [room, setRoom] = useState(null);
+  const [expiredNotice, setExpiredNotice] = useState(false);
+  const [activeTab, setActiveTab] = useState('lobby'); // 'lobby' | 'play' | 'points'
+  const [toast, setToast] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [showDeckModal, setShowDeckModal] = useState(false);
+  const [showCatalogModal, setShowCatalogModal] = useState(false);
+  const [nowTick, setNowTick] = useState(Date.now());
+
+  // Home form state (ZERO sign-in required!)
+  const [roomName, setRoomName] = useState('Chennai Party Night');
+  const [hostNick, setHostNick] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [joinNick, setJoinNick] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  // Read ?room=ABCDEF from QR code / shared link automatically
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = normalizeRoomCode(params.get('room'));
+    if (fromUrl) {
+      setJoinCode(fromUrl);
+    }
+  }, []);
+
+  // Live 60-minute inactivity countdown refresh every 30s
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Subscribe to active room locked strictly by roomCode
+  useEffect(() => {
+    if (!activeRoomCode) {
+      setRoom(null);
+      return;
+    }
+    const unsub = subscribeRoom(
+      activeRoomCode,
+      (data) => {
+        setRoom(data);
+        if (!data) {
+          setErrorMsg('This room session is no longer active.');
+        }
+      },
+      () => {
+        setRoom(null);
+        setActiveRoomCode(null);
+        setExpiredNotice(true);
+      }
+    );
+    return unsub;
+  }, [activeRoomCode]);
+
+  const notify = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast((cur) => (cur === msg ? '' : cur)), 3200);
+  };
+
+  const handleCreateRoom = async (e) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setExpiredNotice(false);
+    setBusy(true);
+    try {
+      const initialIds = [...personalitiesData]
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 20)
+        .map((p) => p.id);
+      const created = await createRoom({
+        roomName,
+        hostId: playerId,
+        hostNickname: hostNick || 'Host',
+        initialDeckIds: initialIds,
+      });
+      setActiveRoomCode(created.roomCode);
+      setActiveTab('lobby');
+      window.history.replaceState({}, '', `?room=${created.roomCode}`);
+    } catch (err) {
+      setErrorMsg(err.message || 'Could not create room.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleJoinRoom = async (e) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setExpiredNotice(false);
+    setBusy(true);
+    try {
+      const joined = await joinRoom({
+        roomCode: joinCode,
+        playerId,
+        nickname: joinNick || 'Player',
+      });
+      setActiveRoomCode(joined.roomCode);
+      setActiveTab(joined.status === 'PLAYING' ? 'play' : 'lobby');
+      window.history.replaceState({}, '', `?room=${joined.roomCode}`);
+    } catch (err) {
+      setErrorMsg(err.message || 'Could not join room.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const leaveSession = () => {
+    setActiveRoomCode(null);
+    setRoom(null);
+    setActiveTab('lobby');
+    window.history.replaceState({}, '', window.location.pathname);
+  };
+
+  const isHost = room?.hostId === playerId;
+
+  return (
+    <div className="min-h-screen bg-[#FFFBF2] text-[#1D1528]">
+      {/* Top Bar */}
+      <header className="sticky top-0 z-30 border-b border-[#E7DAC6] bg-[#FFFBF2]/95 backdrop-blur">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-[#D9480F]" />
+              <span className="font-display text-lg font-extrabold tracking-tight">
+                Guess the Personality
+              </span>
+            </div>
+            {room && (
+              <div className="mt-0.5 flex items-center gap-2 font-mono text-[11px] text-[#5A4E6C]">
+                <span className="font-bold text-[#D9480F]">ROOM {room.roomCode}</span>
+                <span>•</span>
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Auto-clears in {formatRemainingSession(room, nowTick)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {room ? (
+            <button
+              onClick={leaveSession}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[#DFCEB8] bg-white px-3 py-1.5 text-xs font-bold text-[#5A4E6C] hover:border-rose-400 hover:text-rose-700"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Exit
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowCatalogModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[#DFCEB8] bg-white px-3 py-1.5 text-xs font-bold text-[#1D1528] hover:border-[#D9480F]"
+            >
+              <BookOpen className="h-3.5 w-3.5 text-[#D9480F]" />
+              100 Icons
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-2xl px-4 pb-24 pt-5">
+        {!isFirebaseConfigured && (
+          <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs text-amber-950">
+            <strong>Local Multi-Tab Mode:</strong> Works instantly across tabs on this device. Add your free Firebase Realtime Database URL in <code className="font-mono">.env</code> (no login needed!) for multi-phone sync.
+          </div>
+        )}
+
+        {expiredNotice && (
+          <div className="mb-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">
+            Room session was automatically cleared after 60 minutes of inactivity. Create a new room to play again!
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="mb-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">
+            {errorMsg}
+          </div>
+        )}
+
+        {/* HOME VIEW (ZERO SIGN-IN) */}
+        {!room ? (
+          <div className="space-y-5">
+            <div className="rounded-3xl bg-gradient-to-br from-[#120C21] via-[#241642] to-[#3B193F] p-6 text-white shadow-xl">
+              <span className="inline-block rounded-full bg-amber-400 px-3 py-1 font-mono text-[11px] font-extrabold text-[#120C21]">
+                ZERO SIGN-IN • 60-MIN AUTO-CLEAR SESSIONS
+              </span>
+              <h1 className="mt-3 font-display text-3xl font-extrabold leading-tight">
+                Tamil &amp; Pan-Indian Forehead Party Game
+              </h1>
+              <p className="mt-2 text-sm text-purple-200/90">
+                70 Tamil + 30 Pan-Indian legends. Create a room, share the QR code, eliminate cards from the pile, and play 3 rounds (15 Yes/No questions max) straight in any phone browser.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* Join Room Form (first if ?room= is prefilled) */}
+              <form
+                onSubmit={handleJoinRoom}
+                className="rounded-3xl border border-[#E7DAC6] bg-white p-5 shadow-sm space-y-3"
+              >
+                <div className="flex items-center gap-2 text-[#0F766E]">
+                  <QrCode className="h-5 w-5" />
+                  <h2 className="font-display text-lg font-bold text-[#1D1528]">Join a Room</h2>
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(normalizeRoomCode(e.target.value))}
+                  placeholder="Room Code (e.g. KVR7M2)"
+                  className="w-full rounded-xl border border-[#DFCEB8] bg-[#FFFBF2] px-3.5 py-2.5 font-mono text-sm font-bold uppercase tracking-widest outline-none focus:border-[#0F766E]"
+                />
+                <input
+                  type="text"
+                  required
+                  maxLength={30}
+                  value={joinNick}
+                  onChange={(e) => setJoinNick(e.target.value)}
+                  placeholder="Your Nickname"
+                  className="w-full rounded-xl border border-[#DFCEB8] bg-[#FFFBF2] px-3.5 py-2.5 text-sm outline-none focus:border-[#0F766E]"
+                />
+                <button
+                  type="submit"
+                  disabled={busy || joinCode.length < 4 || !joinNick.trim()}
+                  className="w-full rounded-xl bg-[#0F766E] py-3 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-40"
+                >
+                  {busy ? 'Joining...' : 'Join Room'}
+                </button>
+              </form>
+
+              {/* Host Create Room Form */}
+              <form
+                onSubmit={handleCreateRoom}
+                className="rounded-3xl border border-[#E7DAC6] bg-white p-5 shadow-sm space-y-3"
+              >
+                <div className="flex items-center gap-2 text-[#D9480F]">
+                  <PlusCircle className="h-5 w-5" />
+                  <h2 className="font-display text-lg font-bold text-[#1D1528]">Host New Room</h2>
+                </div>
+                <input
+                  type="text"
+                  required
+                  maxLength={60}
+                  value={roomName}
+                  onChange={(e) => setRoomName(e.target.value)}
+                  placeholder="Room Title"
+                  className="w-full rounded-xl border border-[#DFCEB8] bg-[#FFFBF2] px-3.5 py-2.5 text-sm outline-none focus:border-[#D9480F]"
+                />
+                <input
+                  type="text"
+                  required
+                  maxLength={30}
+                  value={hostNick}
+                  onChange={(e) => setHostNick(e.target.value)}
+                  placeholder="Host Nickname"
+                  className="w-full rounded-xl border border-[#DFCEB8] bg-[#FFFBF2] px-3.5 py-2.5 text-sm outline-none focus:border-[#D9480F]"
+                />
+                <button
+                  type="submit"
+                  disabled={busy || !roomName.trim() || !hostNick.trim()}
+                  className="w-full rounded-xl bg-[#D9480F] py-3 text-sm font-bold text-white hover:bg-[#B83B0B] disabled:opacity-40"
+                >
+                  {busy ? 'Creating...' : 'Create Room & QR'}
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : (
+          /* ACTIVE ROOM VIEW */
+          <>
+            {activeTab === 'lobby' && (
+              <LobbyDeckTab
+                room={room}
+                playerId={playerId}
+                isHost={isHost}
+                personalityById={personalityById}
+                onOpenDeckBuilder={() => setShowDeckModal(true)}
+                onFinalizeAndStart={async () => {
+                  await finalizeDeck({
+                    roomCode: room.roomCode,
+                    hostId: playerId,
+                    selectedIds: room.deckIds,
+                    startPlaying: true,
+                  });
+                  notify(`Locked & shuffled ${room.deckIds.length} personalities!`);
+                  setActiveTab('play');
+                }}
+                onEliminateFromPile={async (pid, name) => {
+                  try {
+                    await eliminatePersonalityFromPile({
+                      roomCode: room.roomCode,
+                      hostId: playerId,
+                      personalityId: pid,
+                    });
+                    notify(`Eliminated "${name}" from active pile.`);
+                  } catch (err) {
+                    setErrorMsg(err.message);
+                  }
+                }}
+                onRestoreToPile={async (pid, name) => {
+                  await restoreEliminatedPersonality({
+                    roomCode: room.roomCode,
+                    hostId: playerId,
+                    personalityId: pid,
+                  });
+                  notify(`Restored "${name}" to active pile.`);
+                }}
+                onGoToForehead={() => setActiveTab('play')}
+                onNotify={notify}
+              />
+            )}
+
+            {activeTab === 'play' && (
+              <ForeheadPlayTab
+                room={room}
+                playerId={playerId}
+                isHost={isHost}
+                personalityById={personalityById}
+                onPickCard={async (num) => {
+                  await pickCard({ roomCode: room.roomCode, playerId, cardNumber: num });
+                  notify(`Card #${num} selected & hidden. Raise phone to forehead!`);
+                }}
+                onSetCardVisible={(visible) =>
+                  setCardVisibility({ roomCode: room.roomCode, playerId, visible })
+                }
+                onUpdateQuestions={(rQ, tQ) =>
+                  updateQuestions({
+                    roomCode: room.roomCode,
+                    playerId,
+                    roundQuestions: rQ,
+                    totalQuestions: tQ,
+                  })
+                }
+                onCompleteGuess={async (correct) => {
+                  await completeGuess({
+                    roomCode: room.roomCode,
+                    playerId,
+                    guessedCorrectly: correct,
+                  });
+                  notify(correct ? 'Guess recorded in Points Tab!' : 'Marked unguessed (0 pts).');
+                }}
+                onEliminateCurrentCard={async (pid, name) => {
+                  try {
+                    await eliminatePersonalityFromPile({
+                      roomCode: room.roomCode,
+                      hostId: playerId,
+                      personalityId: pid,
+                    });
+                    notify(`Eliminated "${name}" from the pile.`);
+                  } catch (err) {
+                    setErrorMsg(err.message);
+                  }
+                }}
+              />
+            )}
+
+            {activeTab === 'points' && (
+              <PointsTab
+                room={room}
+                playerId={playerId}
+                isHost={isHost}
+                onHostRecordScore={async (targetUid, round, score) => {
+                  await hostRecordScore({
+                    roomCode: room.roomCode,
+                    hostId: playerId,
+                    targetPlayerId: targetUid,
+                    round,
+                    score,
+                  });
+                  notify(`Saved Round ${round} score (${score} pts).`);
+                }}
+                onHostAdvanceRound={async (nextRound, eliminateUsed) => {
+                  await advanceRound({
+                    roomCode: room.roomCode,
+                    hostId: playerId,
+                    nextRound,
+                    eliminateUsedCards: eliminateUsed,
+                  });
+                  notify(`Moved to Round ${nextRound}!`);
+                }}
+                onHostFinishMatch={async () => {
+                  await finishMatch({ roomCode: room.roomCode, hostId: playerId });
+                  notify('Match finished! Final standings locked.');
+                }}
+              />
+            )}
+          </>
+        )}
+      </main>
+
+      {/* Bottom Tab Navigation inside Active Room */}
+      {room && (
+        <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#E7DAC6] bg-white/95 backdrop-blur">
+          <div className="mx-auto grid max-w-2xl grid-cols-3">
+            {[
+              ['lobby', 'Lobby & Pile', Users],
+              ['play', 'Forehead Play', Eye],
+              ['points', 'Points Tab', Trophy],
+            ].map(([id, label, IconComp]) => {
+              const active = activeTab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={`flex flex-col items-center justify-center gap-1 py-3 text-xs font-bold transition ${
+                    active ? 'text-[#D9480F]' : 'text-[#5A4E6C]'
+                  }`}
+                >
+                  <IconComp className="h-5 w-5" />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-20 left-1/2 z-40 -translate-x-1/2 rounded-full bg-[#120C21] px-4 py-2 text-xs font-bold text-amber-300 shadow-lg">
+          {toast}
+        </div>
+      )}
+
+      {/* Host Deck Builder Modal */}
+      {showDeckModal && room && (
+        <DeckBuilderModal
+          allPersonalities={personalitiesData}
+          initialSelectedIds={room.deckIds || []}
+          selectionMode={true}
+          onConfirm={async (chosenIds, startNow) => {
+            await finalizeDeck({
+              roomCode: room.roomCode,
+              hostId: playerId,
+              selectedIds: chosenIds,
+              startPlaying: startNow,
+            });
+            setShowDeckModal(false);
+            notify(`Deck updated (${chosenIds.length} personalities).`);
+            if (startNow) setActiveTab('play');
+          }}
+          onClose={() => setShowDeckModal(false)}
+        />
+      )}
+
+      {/* Catalog Modal */}
+      {showCatalogModal && (
+        <DeckBuilderModal
+          allPersonalities={personalitiesData}
+          initialSelectedIds={[]}
+          selectionMode={false}
+          onClose={() => setShowCatalogModal(false)}
+        />
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$roomCode": {
+        ".read": "$roomCode.matches(/^[A-Z0-9]{4,10}$/)",
+        ".write": "$roomCode.matches(/^[A-Z0-9]{4,10}$/) && (!newData.exists() || (newData.child('roomCode').val() == $roomCode && newData.child('lastActiveAt').isNumber() && newData.child('expiresAt').isNumber()))"
+      }
+    }
+  }
+}

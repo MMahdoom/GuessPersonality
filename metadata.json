@@ -1,0 +1,6 @@
+{
+  "name": "Guess Personality",
+  "description": "Real-time Tamil and Pan-Indian forehead party game with QR rooms, 100 personalities, 3-round 15-question gameplay, and live scoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
