@@ -22,6 +22,40 @@ export function normalizeRoomCode(raw) {
 }
 
 /**
+ * Extracts a room code from either a scanned shareable URL (?room=ABCDEF)
+ * or a plain room code string (ABCDEF). Returns '' if unrecognized.
+ */
+export function extractRoomCodeFromScan(rawText) {
+  const text = String(rawText || '').trim();
+  if (!text) return '';
+
+  // 1. Try parsing as full URL or query string with ?room=...
+  try {
+    const parsed = text.startsWith('http://') || text.startsWith('https://')
+      ? new URL(text)
+      : new URL(text, 'https://example.invalid/');
+    const fromParam = normalizeRoomCode(parsed.searchParams.get('room'));
+    if (fromParam.length >= 4) return fromParam;
+  } catch {
+    // Not a URL; fall through
+  }
+
+  // 2. Match ?room=CODE or &room=CODE anywhere in string
+  const paramMatch = text.match(/[?&]room=([A-Za-z0-9]{4,10})/i);
+  if (paramMatch) {
+    return normalizeRoomCode(paramMatch[1]);
+  }
+
+  // 3. Accept a raw alphanumeric room code (4-10 chars, no URL syntax)
+  if (/^[A-Za-z0-9\s-]{4,12}$/.test(text)) {
+    const cleaned = normalizeRoomCode(text);
+    if (cleaned.length >= 4 && cleaned.length <= 10) return cleaned;
+  }
+
+  return '';
+}
+
+/**
  * Exact scoring formula:
  * Score = 15 - (number of questions asked), clamped at 0 minimum if
  * questions reach/exceed 15 or unguessed.
@@ -86,4 +120,10 @@ export function getInitials(name) {
     .slice(0, 2)
     .map((w) => w[0].toUpperCase())
     .join('') || '?';
+}
+
+export function toIdArray(val) {
+  if (!val) return [];
+  const raw = Array.isArray(val) ? val : typeof val === 'object' ? Object.values(val) : [];
+  return raw.map(Number).filter((n) => Number.isFinite(n) && n > 0);
 }

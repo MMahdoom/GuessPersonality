@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Dices,
   Eye,
   EyeOff,
   Lock,
+  Maximize2,
+  Minimize2,
   Minus,
   Plus,
   RotateCcw,
@@ -26,6 +28,12 @@ export default function ForeheadPlayTab({
   onEliminateCurrentCard,
 }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const [isLandscapeFullscreen, setIsLandscapeFullscreen] = useState(false);
+  const [viewport, setViewport] = useState(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth : 390,
+    h: typeof window !== 'undefined' ? window.innerHeight : 844,
+  }));
+  const fullscreenRef = useRef(null);
 
   const myPlayer = room.players?.[playerId] || {};
   const deckIds = room.deckIds || [];
@@ -40,6 +48,75 @@ export default function ForeheadPlayTab({
   useEffect(() => {
     setImgFailed(false);
   }, [assignedId, portraitUrl]);
+
+  // Automatically close fullscreen if card is hidden, cleared, or round changes
+  useEffect(() => {
+    if (!myPlayer.cardVisible || !personality) {
+      setIsLandscapeFullscreen(false);
+    }
+  }, [myPlayer.cardVisible, personality]);
+
+  // Manage Fullscreen API, Landscape orientation lock (where supported), and viewport resize
+  useEffect(() => {
+    if (!isLandscapeFullscreen) return;
+
+    const updateViewport = () => {
+      setViewport({ w: window.innerWidth, h: window.innerHeight });
+    };
+    updateViewport();
+
+    const el = fullscreenRef.current;
+    if (el) {
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (typeof req === 'function') {
+        Promise.resolve(req.call(el))
+          .then(() => {
+            if (window.screen?.orientation?.lock) {
+              window.screen.orientation.lock('landscape').catch(() => {});
+            }
+          })
+          .catch(() => {});
+      } else if (window.screen?.orientation?.lock) {
+        window.screen.orientation.lock('landscape').catch(() => {});
+      }
+    }
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setIsLandscapeFullscreen(false);
+    };
+    const onFsChange = () => {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      if (!fsEl) {
+        setIsLandscapeFullscreen(false);
+      }
+    };
+
+    window.addEventListener('resize', updateViewport);
+    window.addEventListener('orientationchange', updateViewport);
+    window.addEventListener('keydown', onKeyDown);
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      window.removeEventListener('orientationchange', updateViewport);
+      window.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+      try {
+        window.screen?.orientation?.unlock?.();
+      } catch {
+        // Ignore on unsupported browsers
+      }
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fsEl) {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (typeof exit === 'function') {
+          Promise.resolve(exit.call(document)).catch(() => {});
+        }
+      }
+    };
+  }, [isLandscapeFullscreen]);
 
   // Screen Wake Lock while displaying card on forehead
   useEffect(() => {
@@ -123,14 +200,19 @@ export default function ForeheadPlayTab({
       ) : (
         /* REVEALED FOREHEAD CARD (HIGH-CONTRAST) */
         <div className="overflow-hidden rounded-3xl border-2 border-amber-400 bg-[#120C21] text-white shadow-2xl">
-          <div className="relative h-72 w-full bg-gradient-to-br from-[#281A4A] via-[#1B1233] to-[#120C21] sm:h-80">
+          <button
+            type="button"
+            onClick={() => setIsLandscapeFullscreen(true)}
+            aria-label={`Open ${personality.name} in landscape full screen`}
+            className="group relative block h-72 w-full cursor-pointer bg-gradient-to-br from-[#281A4A] via-[#1B1233] to-[#120C21] text-left focus:outline-none sm:h-80"
+          >
             {portraitUrl && !imgFailed ? (
               <img
                 src={portraitUrl}
                 alt={personality.name}
                 referrerPolicy="no-referrer"
                 onError={() => setImgFailed(true)}
-                className="h-full w-full object-cover object-top"
+                className="h-full w-full object-cover object-top transition duration-200 group-hover:scale-[1.02]"
               />
             ) : portraitLoading ? (
               <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
@@ -161,7 +243,12 @@ export default function ForeheadPlayTab({
                 {personality.region}
               </span>
             </div>
-          </div>
+
+            <div className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full border border-amber-400/70 bg-[#120C21]/85 px-3 py-1.5 text-[11px] font-bold text-amber-300 shadow-md backdrop-blur-sm">
+              <Maximize2 className="h-3.5 w-3.5" />
+              Tap for Landscape Full Screen
+            </div>
+          </button>
 
           <div className="px-5 pb-6 pt-3 text-center">
             <h1 className="font-display text-4xl font-extrabold leading-tight tracking-tight text-white">
@@ -189,6 +276,119 @@ export default function ForeheadPlayTab({
               HIDE / LOCK
             </button>
           </div>
+        </div>
+      )}
+
+      {/* LANDSCAPE FULL-SCREEN FOREHEAD OVERLAY */}
+      {isLandscapeFullscreen && myPlayer.cardVisible && personality && (
+        <div
+          ref={fullscreenRef}
+          className="fixed inset-0 z-50 overflow-hidden bg-[#0D0818] text-white"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${personality.name} landscape full screen`}
+        >
+          {(() => {
+            const isPortraitViewport = viewport.h > viewport.w;
+            const stageStyle = isPortraitViewport
+              ? {
+                  width: `${viewport.h}px`,
+                  height: `${viewport.w}px`,
+                  position: 'fixed',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%) rotate(90deg)',
+                }
+              : {
+                  width: '100vw',
+                  height: '100dvh',
+                  position: 'fixed',
+                  inset: 0,
+                };
+
+            return (
+              <div
+                style={stageStyle}
+                className="flex flex-row items-stretch gap-5 bg-gradient-to-br from-[#120C21] via-[#1C1235] to-[#0D0818] p-4 sm:p-6"
+              >
+                {/* Left Pane: Large Portrait Photo */}
+                <div className="relative flex w-[44%] shrink-0 items-center justify-center overflow-hidden rounded-3xl border-2 border-amber-400/80 bg-[#1A1130] shadow-2xl">
+                  {portraitUrl && !imgFailed ? (
+                    <img
+                      src={portraitUrl}
+                      alt={personality.name}
+                      referrerPolicy="no-referrer"
+                      onError={() => setImgFailed(true)}
+                      className="h-full w-full object-cover object-top"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
+                      <div className="flex h-28 w-28 items-center justify-center rounded-full border-4 border-amber-400 bg-[#120C21] font-display text-5xl font-extrabold text-amber-400">
+                        {getInitials(personality.name)}
+                      </div>
+                      <span className="mt-3 font-mono text-xs font-bold uppercase tracking-widest text-amber-300">
+                        {personality.category}
+                      </span>
+                    </div>
+                  )}
+                  <span className="absolute left-3 top-3 rounded-full bg-amber-400 px-3 py-1 font-mono text-xs font-extrabold text-[#120C21] shadow">
+                    CARD #{pickedNum}
+                  </span>
+                </div>
+
+                {/* Right Pane: Huge Name, Tamil Name, Details & Controls */}
+                <div className="flex min-w-0 flex-1 flex-col justify-between py-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="rounded-full border border-teal-400/60 bg-teal-500/15 px-3 py-1 font-mono text-xs font-bold uppercase text-teal-300">
+                      {personality.region}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsLandscapeFullscreen(false)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/20"
+                    >
+                      <Minimize2 className="h-4 w-4" />
+                      Exit Full Screen
+                    </button>
+                  </div>
+
+                  <div className="my-auto py-2 text-left">
+                    <h1 className="font-display text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl md:text-6xl">
+                      {personality.name}
+                    </h1>
+                    {personality.tamil_name && (
+                      <p className="mt-2 text-2xl font-bold text-amber-400 sm:text-3xl">
+                        {personality.tamil_name}
+                      </p>
+                    )}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <span className="rounded-xl bg-white/10 px-3.5 py-1.5 text-sm font-semibold text-purple-100">
+                        {personality.category}
+                      </span>
+                      <span className="rounded-xl bg-white/10 px-3.5 py-1.5 text-sm font-semibold text-purple-100">
+                        {personality.era}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={isFinished}
+                      onClick={() => {
+                        setIsLandscapeFullscreen(false);
+                        onSetCardVisible(false);
+                      }}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-rose-600 py-3.5 font-display text-lg font-extrabold tracking-wider text-white shadow-lg hover:bg-rose-500 disabled:opacity-40"
+                    >
+                      <EyeOff className="h-5 w-5" />
+                      HIDE / LOCK
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -267,7 +467,10 @@ export default function ForeheadPlayTab({
                 <button
                   disabled={isFinished || totalQ <= 0}
                   onClick={() =>
-                    onUpdateQuestions(Math.max(0, roundQ - 1), Math.max(0, totalQ - 1))
+                    onUpdateQuestions(
+                      roundQ > 0 ? roundQ - 1 : 4,
+                      Math.max(0, totalQ - 1)
+                    )
                   }
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#DFCEB8] py-3 text-sm font-bold text-[#1D1528] disabled:opacity-40"
                 >

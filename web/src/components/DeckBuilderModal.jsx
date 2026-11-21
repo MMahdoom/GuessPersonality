@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Check, Search, X } from 'lucide-react';
-import { getInitials } from '../utils/gameUtils.js';
+import { getInitials, shuffleArray } from '../utils/gameUtils.js';
 
 const REGIONS = ['All', 'Tamil', 'Pan-Indian'];
 
@@ -67,7 +67,7 @@ export default function DeckBuilderModal({
       type === 'tamil25'
         ? allPersonalities.filter((p) => p.region === 'Tamil')
         : [...allPersonalities];
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    const shuffled = shuffleArray(pool);
     const count = type === 'quick15' ? 15 : type === 'tamil25' ? 25 : 40;
     setSelected(new Set(shuffled.slice(0, count).map((p) => p.id)));
   };

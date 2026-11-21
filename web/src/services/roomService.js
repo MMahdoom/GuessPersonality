@@ -7,24 +7,18 @@ import {
   isRoomExpired,
   normalizeRoomCode,
   shuffleArray,
+  toIdArray,
 } from '../utils/gameUtils.js';
 
-const rawDbUrl = (import.meta.env.VITE_FIREBASE_DATABASE_URL || '').trim().replace(/\/+$/, '');
+const env = import.meta.env || {};
+const rawDbUrl = (env.VITE_FIREBASE_DATABASE_URL || '').trim().replace(/\/+$/, '');
 
 const firebaseConfig = {
-  ...(import.meta.env.VITE_FIREBASE_API_KEY
-    ? { apiKey: import.meta.env.VITE_FIREBASE_API_KEY.trim() }
-    : {}),
-  ...(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN
-    ? { authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN.trim() }
-    : {}),
+  ...(env.VITE_FIREBASE_API_KEY ? { apiKey: env.VITE_FIREBASE_API_KEY.trim() } : {}),
+  ...(env.VITE_FIREBASE_AUTH_DOMAIN ? { authDomain: env.VITE_FIREBASE_AUTH_DOMAIN.trim() } : {}),
   ...(rawDbUrl ? { databaseURL: rawDbUrl } : {}),
-  ...(import.meta.env.VITE_FIREBASE_PROJECT_ID
-    ? { projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID.trim() }
-    : {}),
-  ...(import.meta.env.VITE_FIREBASE_APP_ID
-    ? { appId: import.meta.env.VITE_FIREBASE_APP_ID.trim() }
-    : {}),
+  ...(env.VITE_FIREBASE_PROJECT_ID ? { projectId: env.VITE_FIREBASE_PROJECT_ID.trim() } : {}),
+  ...(env.VITE_FIREBASE_APP_ID ? { appId: env.VITE_FIREBASE_APP_ID.trim() } : {}),
 };
 
 // Firebase Realtime Database only requires databaseURL for unauthenticated room-code sync
@@ -50,6 +44,9 @@ function formatDbError(err) {
 const LOCAL_PREFIX = 'gtp_room_';
 const channel =
   typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('gtp_rooms_sync') : null;
+if (typeof channel?.unref === 'function') {
+  channel.unref();
+}
 
 function localRead(code) {
   try {
@@ -92,17 +89,27 @@ function touchActivity(now = Date.now()) {
   };
 }
 
+function normalizeRoom(room) {
+  if (!room) return null;
+  return {
+    ...room,
+    deckIds: toIdArray(room.deckIds),
+    eliminatedIds: toIdArray(room.eliminatedIds),
+    players: room.players || {},
+  };
+}
+
 async function readRoomRaw(roomCode) {
   const code = normalizeRoomCode(roomCode);
   if (isFirebaseConfigured && rtdb) {
     try {
       const snap = await get(ref(rtdb, `rooms/${code}`));
-      return snap.exists() ? snap.val() : null;
+      return snap.exists() ? normalizeRoom(snap.val()) : null;
     } catch (err) {
       throw formatDbError(err);
     }
   }
-  return localRead(code);
+  return normalizeRoom(localRead(code));
 }
 
 export async function clearRoom(roomCode) {
@@ -222,7 +229,8 @@ export function subscribeRoom(roomCode, onData, onExpired) {
   const code = normalizeRoomCode(roomCode);
   let lastRoom = null;
 
-  const handleRoomValue = async (room) => {
+  const handleRoomValue = async (rawRoom) => {
+    const room = normalizeRoom(rawRoom);
     if (!room) {
       lastRoom = null;
       onData(null);
