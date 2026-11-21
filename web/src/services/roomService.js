@@ -9,22 +9,41 @@ import {
   shuffleArray,
 } from '../utils/gameUtils.js';
 
+const rawDbUrl = (import.meta.env.VITE_FIREBASE_DATABASE_URL || '').trim().replace(/\/+$/, '');
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  ...(import.meta.env.VITE_FIREBASE_API_KEY
+    ? { apiKey: import.meta.env.VITE_FIREBASE_API_KEY.trim() }
+    : {}),
+  ...(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN
+    ? { authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN.trim() }
+    : {}),
+  ...(rawDbUrl ? { databaseURL: rawDbUrl } : {}),
+  ...(import.meta.env.VITE_FIREBASE_PROJECT_ID
+    ? { projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID.trim() }
+    : {}),
+  ...(import.meta.env.VITE_FIREBASE_APP_ID
+    ? { appId: import.meta.env.VITE_FIREBASE_APP_ID.trim() }
+    : {}),
 };
 
-export const isFirebaseConfigured = Boolean(
-  firebaseConfig.databaseURL && firebaseConfig.projectId
-);
+// Firebase Realtime Database only requires databaseURL for unauthenticated room-code sync
+export const isFirebaseConfigured = Boolean(rawDbUrl);
 
 let rtdb = null;
 if (isFirebaseConfigured) {
   const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-  rtdb = getDatabase(app);
+  rtdb = getDatabase(app, rawDbUrl);
+}
+
+function formatDbError(err) {
+  const msg = String(err?.message || err || '');
+  if (msg.toLowerCase().includes('permission_denied') || msg.toLowerCase().includes('permission denied')) {
+    return new Error(
+      'Firebase Realtime Database denied access. Open Firebase Console → Realtime Database → Rules, paste web/database.rules.json, and click Publish.'
+    );
+  }
+  return err instanceof Error ? err : new Error(msg || 'Database sync error.');
 }
 
 // Local multi-tab BroadcastChannel fallback when Firebase env vars are not set yet
@@ -76,8 +95,12 @@ function touchActivity(now = Date.now()) {
 async function readRoomRaw(roomCode) {
   const code = normalizeRoomCode(roomCode);
   if (isFirebaseConfigured && rtdb) {
-    const snap = await get(ref(rtdb, `rooms/${code}`));
-    return snap.exists() ? snap.val() : null;
+    try {
+      const snap = await get(ref(rtdb, `rooms/${code}`));
+      return snap.exists() ? snap.val() : null;
+    } catch (err) {
+      throw formatDbError(err);
+    }
   }
   return localRead(code);
 }
@@ -86,7 +109,11 @@ export async function clearRoom(roomCode) {
   const code = normalizeRoomCode(roomCode);
   if (!code) return;
   if (isFirebaseConfigured && rtdb) {
-    await remove(ref(rtdb, `rooms/${code}`));
+    try {
+      await remove(ref(rtdb, `rooms/${code}`));
+    } catch {
+      // Ignore cleanup errors if already removed
+    }
   } else {
     localWrite(code, null);
   }
@@ -107,7 +134,11 @@ async function writeFullRoom(roomCode, roomObj) {
   const code = normalizeRoomCode(roomCode);
   const next = { ...roomObj, ...touchActivity() };
   if (isFirebaseConfigured && rtdb) {
-    await set(ref(rtdb, `rooms/${code}`), next);
+    try {
+      await set(ref(rtdb, `rooms/${code}`), next);
+    } catch (err) {
+      throw formatDbError(err);
+    }
   } else {
     localWrite(code, next);
   }
@@ -160,6 +191,11 @@ export async function joinRoom({ roomCode, playerId, nickname }) {
   }
   const room = await readActiveRoomOrAutoClear(code);
   if (!room) {
+    if (!isFirebaseConfigured) {
+      throw new Error(
+        `Room ${code} was not found on this device. Your site is in Single-Device Mode — add VITE_FIREBASE_DATABASE_URL in GitHub Actions Secrets/Variables and redeploy to join from another phone.`
+      );
+    }
     throw new Error(`Room ${code} does not exist or expired after 60 minutes of inactivity.`);
   }
   if (room.status === 'FINISHED') {
@@ -349,10 +385,14 @@ async function patchPlayer(roomCode, playerId, mutatePlayerFn) {
   const activity = touchActivity(now);
 
   if (isFirebaseConfigured && rtdb) {
-    await update(ref(rtdb, `rooms/${normalizeRoomCode(roomCode)}`), {
-      [`players/${playerId}`]: updatedPlayer,
-      ...activity,
-    });
+    try {
+      await update(ref(rtdb, `rooms/${normalizeRoomCode(roomCode)}`), {
+        [`players/${playerId}`]: updatedPlayer,
+        ...activity,
+      });
+    } catch (err) {
+      throw formatDbError(err);
+    }
   } else {
     localWrite(normalizeRoomCode(roomCode), {
       ...room,
