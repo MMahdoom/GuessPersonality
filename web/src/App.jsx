@@ -27,6 +27,7 @@ import {
   pickCard,
   restoreEliminatedPersonality,
   setCardVisibility,
+  startNewGame,
   subscribeRoom,
   updateQuestions,
   completeGuess,
@@ -35,7 +36,9 @@ import {
   formatRemainingSession,
   getOrCreateBrowserPlayerId,
   normalizeRoomCode,
+  shuffleArray,
 } from './utils/gameUtils.js';
+import { prefetchPersonalityImages } from './utils/wikiImage.js';
 
 export default function App() {
   const playerId = useMemo(() => getOrCreateBrowserPlayerId(), []);
@@ -43,6 +46,26 @@ export default function App() {
     const map = {};
     for (const p of personalitiesData) map[p.id] = p;
     return map;
+  }, []);
+  const { totalCount, tamilCount, panIndianCount } = useMemo(() => {
+    const tamil = personalitiesData.filter((p) => p.region === 'Tamil').length;
+    return {
+      totalCount: personalitiesData.length,
+      tamilCount: tamil,
+      panIndianCount: personalitiesData.length - tamil,
+    };
+  }, []);
+
+  const [imageMap, setImageMap] = useState({});
+
+  useEffect(() => {
+    let active = true;
+    prefetchPersonalityImages(personalitiesData).then((resolved) => {
+      if (active) setImageMap(resolved);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const [activeRoomCode, setActiveRoomCode] = useState(null);
@@ -111,10 +134,7 @@ export default function App() {
     setExpiredNotice(false);
     setBusy(true);
     try {
-      const initialIds = [...personalitiesData]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 20)
-        .map((p) => p.id);
+      const initialIds = shuffleArray(personalitiesData.map((p) => p.id));
       const created = await createRoom({
         roomName,
         hostId: playerId,
@@ -199,7 +219,7 @@ export default function App() {
               className="inline-flex items-center gap-1.5 rounded-xl border border-[#DFCEB8] bg-white px-3 py-1.5 text-xs font-bold text-[#1D1528] hover:border-[#D9480F]"
             >
               <BookOpen className="h-3.5 w-3.5 text-[#D9480F]" />
-              100 Icons
+              {totalCount} Icons
             </button>
           )}
         </div>
@@ -240,7 +260,7 @@ export default function App() {
                 Tamil &amp; Pan-Indian Forehead Party Game
               </h1>
               <p className="mt-2 text-sm text-purple-200/90">
-                70 Tamil + 30 Pan-Indian legends. Create a room, share the QR code, eliminate cards from the pile, and play 3 rounds (15 Yes/No questions max) straight in any phone browser.
+                {tamilCount} Tamil + {panIndianCount} Pan-Indian legends. Create a room, share the QR code, eliminate cards from the pile, and play 3 rounds (15 Yes/No questions max) straight in any phone browser.
               </p>
             </div>
 
@@ -326,6 +346,8 @@ export default function App() {
                 playerId={playerId}
                 isHost={isHost}
                 personalityById={personalityById}
+                totalCatalogCount={totalCount}
+                imageMap={imageMap}
                 onOpenDeckBuilder={() => setShowDeckModal(true)}
                 onFinalizeAndStart={async () => {
                   await finalizeDeck({
@@ -368,6 +390,7 @@ export default function App() {
                 playerId={playerId}
                 isHost={isHost}
                 personalityById={personalityById}
+                imageMap={imageMap}
                 onPickCard={async (num) => {
                   await pickCard({ roomCode: room.roomCode, playerId, cardNumber: num });
                   notify(`Card #${num} selected & hidden. Raise phone to forehead!`);
@@ -434,6 +457,15 @@ export default function App() {
                   await finishMatch({ roomCode: room.roomCode, hostId: playerId });
                   notify('Match finished! Final standings locked.');
                 }}
+                onHostStartNewGame={async (restoreEliminated) => {
+                  await startNewGame({
+                    roomCode: room.roomCode,
+                    hostId: playerId,
+                    restoreEliminated,
+                  });
+                  notify('New game started with freshly randomized card numbers!');
+                  setActiveTab('play');
+                }}
               />
             )}
           </>
@@ -479,6 +511,7 @@ export default function App() {
         <DeckBuilderModal
           allPersonalities={personalitiesData}
           initialSelectedIds={room.deckIds || []}
+          imageMap={imageMap}
           selectionMode={true}
           onConfirm={async (chosenIds, startNow) => {
             await finalizeDeck({
@@ -500,6 +533,7 @@ export default function App() {
         <DeckBuilderModal
           allPersonalities={personalitiesData}
           initialSelectedIds={[]}
+          imageMap={imageMap}
           selectionMode={false}
           onClose={() => setShowCatalogModal(false)}
         />

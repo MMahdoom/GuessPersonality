@@ -12,13 +12,15 @@ import {
   SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
-import { buildJoinUrl } from '../utils/gameUtils.js';
+import { buildJoinUrl, getInitials } from '../utils/gameUtils.js';
 
 export default function LobbyDeckTab({
   room,
   playerId,
   isHost,
   personalityById,
+  totalCatalogCount = 100,
+  imageMap = {},
   onOpenDeckBuilder,
   onFinalizeAndStart,
   onEliminateFromPile,
@@ -41,18 +43,20 @@ export default function LobbyDeckTab({
     });
   }, [room.players, room.hostId]);
 
+  // Sort alphabetically and hide assigned card numbers so secret 1..N mappings are never spoiled
   const activePersonalities = useMemo(() => {
     const q = pileSearch.trim().toLowerCase();
     return activeDeckIds
-      .map((id, idx) => ({ cardNum: idx + 1, person: personalityById[id] }))
-      .filter((item) => {
-        if (!item.person) return false;
+      .map((id) => personalityById[id])
+      .filter((person) => {
+        if (!person) return false;
         if (!q) return true;
         return (
-          item.person.name.toLowerCase().includes(q) ||
-          (item.person.tamil_name || '').toLowerCase().includes(q)
+          person.name.toLowerCase().includes(q) ||
+          (person.tamil_name || '').toLowerCase().includes(q)
         );
-      });
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [activeDeckIds, personalityById, pileSearch]);
 
   const eliminatedPersonalities = useMemo(
@@ -135,7 +139,7 @@ export default function LobbyDeckTab({
                 className="flex items-center justify-center gap-2 rounded-xl border border-[#DFCEB8] bg-[#FFFBF2] py-2.5 text-sm font-bold text-[#1D1528] hover:border-[#D9480F]"
               >
                 <SlidersHorizontal className="h-4 w-4" />
-                Pick Subset (100)
+                Pick Subset ({totalCatalogCount})
               </button>
               <button
                 onClick={onFinalizeAndStart}
@@ -161,7 +165,7 @@ export default function LobbyDeckTab({
             {showPileManager && (
               <div className="rounded-2xl border border-[#E7DAC6] bg-[#FFFBF2] p-3.5 space-y-3">
                 <p className="text-xs text-[#5A4E6C]">
-                  Host-only view: Eliminate any personality from the active pile. Remaining card numbers automatically adjust to <strong>1–{activeDeckIds.length}</strong>.
+                  Eliminate any personality from the active pile. Listed A–Z with card numbers hidden so secret <strong>1–{activeDeckIds.length}</strong> assignments are never spoiled.
                 </p>
                 <input
                   type="text"
@@ -172,23 +176,35 @@ export default function LobbyDeckTab({
                 />
 
                 <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
-                  {activePersonalities.map(({ cardNum, person }) => (
+                  {activePersonalities.map((person) => (
                     <div
                       key={person.id}
                       className="flex items-center justify-between gap-2 rounded-xl border border-[#E7DAC6] bg-white px-3 py-2"
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-amber-900">
-                            #{cardNum}
-                          </span>
-                          <span className="truncate text-sm font-semibold text-[#1D1528]">
-                            {person.name}
-                          </span>
+                      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1D1533] font-display text-xs font-bold text-amber-400">
+                          <span>{getInitials(person.name)}</span>
+                          {((person.image_url && person.image_url.trim()) || imageMap[person.id]) && (
+                            <img
+                              src={(person.image_url && person.image_url.trim()) || imageMap[person.id]}
+                              alt={person.name}
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                              className="absolute inset-0 h-full w-full object-cover object-top"
+                            />
+                          )}
                         </div>
-                        <div className="truncate text-[11px] text-[#5A4E6C]">
-                          {person.tamil_name ? `${person.tamil_name} • ` : ''}
-                          {person.region} • {person.category}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold text-[#1D1528]">
+                            {person.name}
+                          </div>
+                          <div className="truncate text-[11px] text-[#5A4E6C]">
+                            {person.tamil_name ? `${person.tamil_name} • ` : ''}
+                            {person.region} • {person.category}
+                          </div>
                         </div>
                       </div>
                       <button

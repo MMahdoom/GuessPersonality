@@ -11,12 +11,14 @@ import {
   Trash2,
 } from 'lucide-react';
 import { calculateScore, getInitials } from '../utils/gameUtils.js';
+import { usePersonalityImage } from '../utils/wikiImage.js';
 
 export default function ForeheadPlayTab({
   room,
   playerId,
   isHost,
   personalityById,
+  imageMap,
   onPickCard,
   onSetCardVisible,
   onUpdateQuestions,
@@ -32,11 +34,12 @@ export default function ForeheadPlayTab({
   const assignedId = pickedNum >= 1 && pickedNum <= maxN ? deckIds[pickedNum - 1] : null;
   const personality = assignedId ? personalityById[assignedId] : null;
   const isFinished = room.status === 'FINISHED';
+  const { url: portraitUrl, loading: portraitLoading } = usePersonalityImage(personality, imageMap);
 
-  // Reset image error state whenever assigned personality changes
+  // Reset image error state whenever assigned personality or resolved URL changes
   useEffect(() => {
     setImgFailed(false);
-  }, [assignedId]);
+  }, [assignedId, portraitUrl]);
 
   // Screen Wake Lock while displaying card on forehead
   useEffect(() => {
@@ -120,16 +123,24 @@ export default function ForeheadPlayTab({
       ) : (
         /* REVEALED FOREHEAD CARD (HIGH-CONTRAST) */
         <div className="overflow-hidden rounded-3xl border-2 border-amber-400 bg-[#120C21] text-white shadow-2xl">
-          <div className="relative h-60 w-full bg-gradient-to-br from-[#281A4A] via-[#1B1233] to-[#120C21]">
-            {personality.image_url && !imgFailed ? (
+          <div className="relative h-72 w-full bg-gradient-to-br from-[#281A4A] via-[#1B1233] to-[#120C21] sm:h-80">
+            {portraitUrl && !imgFailed ? (
               <img
-                src={personality.image_url}
+                src={portraitUrl}
                 alt={personality.name}
+                referrerPolicy="no-referrer"
                 onError={() => setImgFailed(true)}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-cover object-top"
               />
+            ) : portraitLoading ? (
+              <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
+                <div className="h-12 w-12 animate-spin rounded-full border-4 border-amber-400/30 border-t-amber-400" />
+                <span className="mt-3 font-mono text-xs font-bold uppercase tracking-widest text-amber-300">
+                  Loading Portrait...
+                </span>
+              </div>
             ) : (
-              /* Clean Fallback Clue Card */
+              /* Clean Fallback Clue Card (Backup Only) */
               <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
                 <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-amber-400 bg-[#120C21]/90 font-display text-4xl font-extrabold text-amber-400 shadow-lg">
                   {getInitials(personality.name)}

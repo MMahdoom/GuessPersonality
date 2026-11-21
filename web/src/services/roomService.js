@@ -157,7 +157,7 @@ export async function createRoom({ roomName, hostId, hostNickname, initialDeckId
   const deckIds = shuffleArray(
     (initialDeckIds && initialDeckIds.length ? initialDeckIds : Array.from({ length: 15 }, (_, i) => i + 1))
       .map(Number)
-      .filter((id) => id >= 1 && id <= 100)
+      .filter((id) => Number.isFinite(id) && id > 0)
   );
 
   const cleanHost = String(hostNickname || 'Host').trim().slice(0, 30) || 'Host';
@@ -284,7 +284,9 @@ export async function finalizeDeck({ roomCode, hostId, selectedIds, startPlaying
   if (room.hostId !== hostId) throw new Error('Only the host can modify the deck.');
   if (!selectedIds.length) throw new Error('Select at least 1 personality.');
 
-  const shuffled = shuffleArray([...new Set(selectedIds.map(Number).filter((id) => id >= 1 && id <= 100))]);
+  const shuffled = shuffleArray([
+    ...new Set(selectedIds.map(Number).filter((id) => Number.isFinite(id) && id > 0)),
+  ]);
   const eliminated = (room.eliminatedIds || []).filter((id) => !shuffled.includes(id));
 
   const nextPlayers = {};
@@ -529,4 +531,43 @@ export async function finishMatch({ roomCode, hostId }) {
   if (!room) throw new Error('Room expired.');
   if (room.hostId !== hostId) throw new Error('Only the host can finish the match.');
   return writeFullRoom(roomCode, { ...room, status: 'FINISHED' });
+}
+
+export async function startNewGame({ roomCode, hostId, restoreEliminated = false }) {
+  const room = await readActiveRoomOrAutoClear(roomCode);
+  if (!room) throw new Error('Room expired.');
+  if (room.hostId !== hostId) throw new Error('Only the host can start a new game.');
+
+  const currentDeck = (room.deckIds || []).map(Number);
+  const currentEliminated = (room.eliminatedIds || []).map(Number);
+  const pool = restoreEliminated
+    ? [...new Set([...currentDeck, ...currentEliminated])]
+    : currentDeck;
+
+  const nextPlayers = {};
+  for (const [uid, p] of Object.entries(room.players || {})) {
+    nextPlayers[uid] = {
+      ...p,
+      selectedCardNumber: 0,
+      cardVisible: false,
+      roundQuestions: 0,
+      totalQuestions: 0,
+      guessCompleted: false,
+      guessedCorrectly: false,
+      round1Score: 0,
+      round2Score: 0,
+      round3Score: 0,
+      totalScore: 0,
+    };
+  }
+
+  return writeFullRoom(roomCode, {
+    ...room,
+    status: 'PLAYING',
+    currentRound: 1,
+    deckFinalized: true,
+    deckIds: shuffleArray(pool),
+    eliminatedIds: restoreEliminated ? [] : currentEliminated,
+    players: nextPlayers,
+  });
 }

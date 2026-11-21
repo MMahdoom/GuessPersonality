@@ -3,18 +3,11 @@ import { Check, Search, X } from 'lucide-react';
 import { getInitials } from '../utils/gameUtils.js';
 
 const REGIONS = ['All', 'Tamil', 'Pan-Indian'];
-const CATEGORIES = [
-  'All',
-  'Cinema & Actors',
-  'Directors & Music',
-  'Sports',
-  'Literature & History',
-  'Public Figures',
-];
 
 export default function DeckBuilderModal({
   allPersonalities,
   initialSelectedIds,
+  imageMap = {},
   selectionMode = true,
   onConfirm,
   onClose,
@@ -23,6 +16,18 @@ export default function DeckBuilderModal({
   const [region, setRegion] = useState('All');
   const [category, setCategory] = useState('All');
   const [selected, setSelected] = useState(() => new Set(initialSelectedIds || []));
+
+  const categories = useMemo(() => {
+    const unique = [...new Set(allPersonalities.map((p) => p.category).filter(Boolean))];
+    return ['All', ...unique];
+  }, [allPersonalities]);
+
+  const totalCount = allPersonalities.length;
+  const tamilCount = useMemo(
+    () => allPersonalities.filter((p) => p.region === 'Tamil').length,
+    [allPersonalities]
+  );
+  const panIndianCount = totalCount - tamilCount;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -75,12 +80,12 @@ export default function DeckBuilderModal({
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-display text-xl font-bold text-[#1D1528]">
-                {selectionMode ? 'Host Deck Builder' : '100 Indian Personalities'}
+                {selectionMode ? 'Host Deck Builder' : `${totalCount} Indian Personalities`}
               </h2>
               <p className="text-xs text-[#5A4E6C]">
                 {selectionMode
-                  ? `${selected.size} selected — players will pick numbers 1 to ${Math.max(1, selected.size)}`
-                  : '70 Tamil & 30 Pan-Indian personalities across 5 categories'}
+                  ? `${selected.size} selected — card numbers 1–${Math.max(1, selected.size)} will be randomly shuffled`
+                  : `${tamilCount} Tamil & ${panIndianCount} Pan-Indian personalities (numbers are randomly assigned each game)`}
               </p>
             </div>
             <button
@@ -114,13 +119,17 @@ export default function DeckBuilderModal({
                     : 'bg-[#F6EDE0] text-[#5A4E6C] hover:bg-[#EDE0CC]'
                 }`}
               >
-                {r === 'All' ? 'All (100)' : r === 'Tamil' ? 'Tamil (70)' : 'Pan-Indian (30)'}
+                {r === 'All'
+                  ? `All (${totalCount})`
+                  : r === 'Tamil'
+                    ? `Tamil (${tamilCount})`
+                    : `Pan-Indian (${panIndianCount})`}
               </button>
             ))}
           </div>
 
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {CATEGORIES.map((c) => (
+            {categories.map((c) => (
               <button
                 key={c}
                 onClick={() => setCategory(c)}
@@ -141,7 +150,7 @@ export default function DeckBuilderModal({
                 ['quick15', 'Quick 15'],
                 ['tamil25', 'Tamil 25'],
                 ['mix40', 'Mix 40'],
-                ['all', 'All 100'],
+                ['all', `All ${totalCount}`],
                 ['clear', 'Clear'],
               ].map(([key, label]) => (
                 <button
@@ -172,12 +181,23 @@ export default function DeckBuilderModal({
                     : 'border-[#E7DAC6] bg-white hover:border-[#D97706]'
                 }`}
               >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1D1533] font-display text-sm font-bold text-amber-400">
-                  {getInitials(p.name)}
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1D1533] font-display text-sm font-bold text-amber-400">
+                  <span>{getInitials(p.name)}</span>
+                  {((p.image_url && p.image_url.trim()) || imageMap[p.id]) && (
+                    <img
+                      src={(p.image_url && p.image_url.trim()) || imageMap[p.id]}
+                      alt={p.name}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                      className="absolute inset-0 h-full w-full object-cover object-top"
+                    />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-xs font-bold text-[#D9480F]">#{p.id}</span>
                     <span className="truncate font-semibold text-[#1D1528]">{p.name}</span>
                   </div>
                   {p.tamil_name && (

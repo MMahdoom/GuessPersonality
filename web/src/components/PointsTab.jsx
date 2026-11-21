@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Edit3, Flag, Minus, Plus, SkipForward, Trophy } from 'lucide-react';
+import { Edit3, Flag, Minus, Plus, RotateCcw, SkipForward, Trophy } from 'lucide-react';
 import { calculateScore } from '../utils/gameUtils.js';
 
 export default function PointsTab({
@@ -9,6 +9,7 @@ export default function PointsTab({
   onHostRecordScore,
   onHostAdvanceRound,
   onHostFinishMatch,
+  onHostStartNewGame,
 }) {
   const [editing, setEditing] = useState(null); // { uid, player }
   const [eliminateUsedOnNext, setEliminateUsedOnNext] = useState(true);
@@ -98,6 +99,37 @@ export default function PointsTab({
               <Flag className="h-4 w-4" />
               Finish Match
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Host Play Again with Freshly Shuffled Numbers */}
+      {isHost && room.status === 'FINISHED' && onHostStartNewGame && (
+        <div className="rounded-3xl border border-teal-200 bg-teal-50/70 p-4 space-y-2.5">
+          <div>
+            <h3 className="font-display text-base font-bold text-[#1D1528]">
+              Play Another Game in This Room
+            </h3>
+            <p className="text-xs text-[#5A4E6C]">
+              Resets scores to Round 1 and randomly assigns brand-new card numbers (1–N) to every personality.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => onHostStartNewGame(false)}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0F766E] px-3 py-3 text-sm font-bold text-white hover:bg-teal-800"
+            >
+              <RotateCcw className="h-4 w-4" />
+              New Game (Fresh Shuffle)
+            </button>
+            {(room.eliminatedIds || []).length > 0 && (
+              <button
+                onClick={() => onHostStartNewGame(true)}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#0F766E] bg-white px-3 py-3 text-sm font-bold text-[#0F766E] hover:bg-teal-50"
+              >
+                Restore Eliminated &amp; Shuffle
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -31,10 +31,19 @@ export function calculateScore(questionsAsked, guessedCorrectly = true) {
   return Math.max(0, Math.min(MAX_TOTAL_QUESTIONS, MAX_TOTAL_QUESTIONS - Number(questionsAsked || 0)));
 }
 
+function randomInt(maxExclusive) {
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return buf[0] % maxExclusive;
+  }
+  return Math.floor(Math.random() * maxExclusive);
+}
+
 export function shuffleArray(list) {
   const arr = [...list];
   for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = randomInt(i + 1);
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
